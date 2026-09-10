@@ -1,0 +1,66 @@
+name: Сборка и релиз
+
+# Запуск: при пуше тега вида v1.0.0 — соберёт установщики и создаст релиз.
+# Также можно запустить вручную во вкладке Actions (кнопка Run workflow).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# Нужно, чтобы workflow мог создать релиз и загрузить в него файлы.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-13        # Intel-Mac
+            args: "--target x86_64-apple-darwin"
+            rust_target: x86_64-apple-darwin
+          - platform: windows-latest  # Windows
+            args: ""
+            rust_target: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Клонировать репозиторий
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Кэш Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Установить зависимости фронтенда
+        run: npm install
+
+      - name: Сборка и релиз (Tauri)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "OmniSpace ${{ github.ref_name }}"
+          releaseBody: |
+            Автоматическая сборка OmniSpace.
+            Ниже — установщики: Windows (.msi/.exe) и macOS Intel (.dmg).
+            Приложение не подписано: при первом запуске подтвердите вручную
+            (macOS: правый клик → «Открыть»; Windows: «Подробнее» → «Всё равно запустить»).
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
